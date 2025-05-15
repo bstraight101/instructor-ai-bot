@@ -121,6 +121,7 @@ if qa:
                 answer = find_best_match(query, custom_qna)
                 st.write(answer if answer else qa.run(query))
 
+# === Review Questions ===
 st.markdown("---")
 st.header("🧠 Generate Review Questions from PowerPoints")
 pptx_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".pptx")]
@@ -135,6 +136,37 @@ if pptx_files:
                 if line.strip():
                     st.write(f"- {line.strip()}")
 
+# === Quiz Preview Mode ===
+st.markdown("---")
+st.header("📝 Quiz Preview Mode")
+quiz_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith("_review.csv")]
+if quiz_files:
+    selected_quiz = st.selectbox("Choose a quiz file", quiz_files, key="quiz_select")
+    quiz_path = os.path.join(UPLOAD_DIR, selected_quiz)
+
+    try:
+        df = pd.read_csv(quiz_path)
+        required_cols = ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Option Index']
+        if all(col in df.columns for col in required_cols):
+            show_answers = st.checkbox("✅ Show Correct Answers")
+            clean_df = df.dropna(subset=['Question', 'Option A', 'Option B', 'Option C', 'Option D'])
+            for i, row in clean_df.iterrows():
+                st.markdown(f"**Q{i+1}: {row['Question']}**")
+                st.write(f"A) {row['Option A']}")
+                st.write(f"B) {row['Option B']}")
+                st.write(f"C) {row['Option C']}")
+                st.write(f"D) {row['Option D']}")
+                if show_answers:
+                    try:
+                        correct_letter = ['A', 'B', 'C', 'D'][int(row['Correct Option Index'])]
+                        st.success(f"✔️ Correct Answer: {correct_letter}")
+                    except Exception:
+                        st.warning("⚠️ Invalid answer index.")
+                st.markdown("---")
+    except Exception as e:
+        st.error(f"❌ Error reading quiz file: {e}")
+
+# === Debate Rebuttal Analyzer ===
 st.markdown("---")
 st.header("⚔️ Debate Rebuttal Analyzer")
 
