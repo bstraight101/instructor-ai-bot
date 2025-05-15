@@ -9,4 +9,4 @@ langchain
 unstructured
 langchain-community
 sentence-transformers
-chromadb
+docarray
