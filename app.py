@@ -50,16 +50,39 @@ def extract_slide_text(pptx_path):
                         all_text.append(para.text.strip())
     return all_text
 
+
 def generate_with_groq(prompt):
-    api_key = st.secrets["GROQ_API_KEY"]
-    headers = {"Authorization": f"Bearer {api_key}"}
-    data = {
-        "model": "mixtral-8x7b-32768",
-        "messages": [{"role": "user", "content": prompt}],
+    import os
+    import json
+    api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "❌ Missing GROQ_API_KEY in secrets."
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
     }
-    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
-    if res.status_code == 200:
-        return res.json()["choices"][0]["message"]["content"]
+    payload = {
+        "model": "mixtral-8x7b-32768",
+        "messages": [
+            {"role": "system", "content": "You are a helpful teaching assistant."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    try:
+        res = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            data=json.dumps(payload)
+        )
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"]
+        else:
+            return f"❌ Failed to generate. Status code: {res.status_code}
+Message: {res.text}"
+    except Exception as e:
+        return f"❌ Request failed: {str(e)}"
     else:
         return f"❌ Failed to generate. Status code: {res.status_code}"
 
