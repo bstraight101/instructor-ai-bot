@@ -12,4 +12,4 @@ sentence-transformers
 docarray
 docx2txt
 pdfminer.six
-pillow-heif
+pillow-heif==0.12.0
