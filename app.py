@@ -55,17 +55,37 @@ def extract_slide_text(pptx_path):
         for slide in prs.slides for shape in slide.shapes if shape.has_text_frame
     ]
 
-def generate_review_questions_ollama(slide_texts, num_questions=10):
+def generate_with_groq(prompt):
+    api_key = st.secrets["GROQ_API_KEY"]
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {
+        "model": "mixtral-8x7b-32768",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
+    if res.status_code == 200:
+        return res.json()["choices"][0]["message"]["content"]
+    else:
+        return f"❌ Failed to generate. Status code: {res.status_code}"
+
+def generate_review_questions(slide_texts, num_questions=10):
     prompt = (
         f"Generate {num_questions} open-ended review questions for students based on this PowerPoint content.\n\n"
         + "\n".join(slide_texts[:15]) +
         "\n\nOnly list the questions. No answers."
     )
-    res = requests.post(
-        "http://localhost:11434/api/generate",
-        json={"model": "mistral", "prompt": prompt, "stream": False}
+    return generate_with_groq(prompt)
+
+def generate_rebuttal_analysis(text):
+    prompt = (
+        "You are a debate coach. Identify 3–5 specific claims from this student-written argument that are vulnerable to rebuttal.\n"
+        "- Quote the sentence.\n"
+        "- Explain why it's weak (emotional, unsupported, vague, etc.).\n"
+        "- DO NOT provide sources or citations.\n\n"
+        f"{text}\n\n"
+        "Respond as a list with quoted text and a critique."
     )
-    return res.json()["response"] if res.status_code == 200 else "❌ Failed to generate."
+    return generate_with_groq(prompt)
 
 st.set_page_config(page_title="Instructor AI Assistant", layout="centered")
 st.title("📘 Instructor AI Assistant")
@@ -79,7 +99,6 @@ if os.listdir(UPLOAD_DIR):
     st.subheader("📁 Uploaded Files")
     st.selectbox("Currently loaded into the AI assistant:", sorted(os.listdir(UPLOAD_DIR)))
 
-# Vector memory + Q&A
 qa = None
 if os.listdir(UPLOAD_DIR):
     with st.spinner("📚 Processing files..."):
@@ -102,7 +121,6 @@ if qa:
                 answer = find_best_match(query, custom_qna)
                 st.write(answer if answer else qa.run(query))
 
-# === Review Questions ===
 st.markdown("---")
 st.header("🧠 Generate Review Questions from PowerPoints")
 pptx_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".pptx")]
@@ -111,46 +129,12 @@ if pptx_files:
     if st.button("⚙️ Generate Review Questions"):
         with st.spinner("⏳ Generating..."):
             slides = extract_slide_text(os.path.join(UPLOAD_DIR, selected_pptx))
-            result = generate_review_questions_ollama(slides)
+            result = generate_review_questions(slides)
             st.markdown("### 📋 Review Questions")
             for line in result.split("\n"):
                 if line.strip():
                     st.write(f"- {line.strip()}")
 
-# === Quiz Preview Mode ===
-st.markdown("---")
-st.header("📝 Quiz Preview Mode")
-quiz_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith("_review.csv")]
-if quiz_files:
-    selected_quiz = st.selectbox("Choose a quiz file", quiz_files, key="quiz_select")
-    quiz_path = os.path.join(UPLOAD_DIR, selected_quiz)
-
-    try:
-        df = pd.read_csv(quiz_path)
-        required_cols = ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Option Index']
-        if all(col in df.columns for col in required_cols):
-            show_answers = st.checkbox("✅ Show Correct Answers")
-            clean_df = df.dropna(subset=['Question', 'Option A', 'Option B', 'Option C', 'Option D'])
-            for i, row in clean_df.iterrows():
-                question = row['Question']
-                if isinstance(question, str) and question.lower().startswith("what does the slide mean by"):
-                    question = question.replace("What does the slide mean by", "", 1).strip(": ").capitalize()
-                st.markdown(f"**Q{i+1}: {question}**")
-                st.write(f"A) {row['Option A']}")
-                st.write(f"B) {row['Option B']}")
-                st.write(f"C) {row['Option C']}")
-                st.write(f"D) {row['Option D']}")
-                if show_answers:
-                    try:
-                        correct_letter = ['A', 'B', 'C', 'D'][int(row['Correct Option Index'])]
-                        st.success(f"✔️ Correct Answer: {correct_letter}")
-                    except Exception:
-                        st.warning("⚠️ Invalid answer index.")
-                st.markdown("---")
-    except Exception as e:
-        st.error(f"❌ Error reading quiz file: {e}")
-
-# === Debate Rebuttal Analyzer ===
 st.markdown("---")
 st.header("⚔️ Debate Rebuttal Analyzer")
 
@@ -171,40 +155,30 @@ if debate_file:
         full_text = None
 
     if full_text and st.button("🧠 Analyze for Rebuttable Areas"):
-        with st.spinner("Analyzing with Mistral..."):
-            prompt = (
-                "You are a debate coach. Identify 3–5 specific claims from this student-written argument that are vulnerable to rebuttal.\n"
-                "- Quote the sentence.\n"
-                "- Explain why it's weak (emotional, unsupported, vague, etc.).\n"
-                "- DO NOT provide sources or citations.\n\n"
-                f"{full_text}\n\n"
-                "Respond as a list with quoted text and a critique."
+        with st.spinner("Analyzing with Groq..."):
+            feedback = generate_rebuttal_analysis(full_text)
+            disclaimer = (
+                "\n\n---\n\n"
+                "**Note:** You are required to find academic sources to support or refute the claims highlighted above. "
+                "Some of these claims may be inaccurate or oversimplified. Do not follow them blindly. This analysis is intended to generate ideas, "
+                "not provide definitive answers. You are still responsible for conducting your own research to verify the evidence."
             )
-            response = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False})
-            if response.status_code == 200:
-                feedback = response.json()["response"]
-                disclaimer = (
-                    "\n\n---\n\n"
-                    "**Note:** You are required to find academic sources to support or refute the claims highlighted above. "
-                    "Some of these claims may be inaccurate or oversimplified. Do not follow them blindly. This analysis is intended to generate ideas, "
-                    "not provide definitive answers. You are still responsible for conducting your own research to verify the evidence."
-                )
-                full_output = feedback + disclaimer
-                st.markdown(full_output)
+            full_output = feedback + disclaimer
+            st.markdown(full_output)
 
-                # Create PDF
-                buffer = BytesIO()
-                pdf = canvas.Canvas(buffer, pagesize=letter)
-                text = pdf.beginText(40, 750)
-                text.setFont("Helvetica", 11)
-                for line in full_output.split("\n"):
-                    if text.getY() < 40:
-                        pdf.drawText(text)
-                        pdf.showPage()
-                        text = pdf.beginText(40, 750)
-                        text.setFont("Helvetica", 11)
-                    text.textLine(line.strip())
-                pdf.drawText(text)
-                pdf.save()
-                buffer.seek(0)
-                st.download_button("📥 Download Feedback as PDF", buffer, "debate_rebuttal_feedback.pdf", mime="application/pdf")
+            # PDF output
+            buffer = BytesIO()
+            pdf = canvas.Canvas(buffer, pagesize=letter)
+            text = pdf.beginText(40, 750)
+            text.setFont("Helvetica", 11)
+            for line in full_output.split("\n"):
+                if text.getY() < 40:
+                    pdf.drawText(text)
+                    pdf.showPage()
+                    text = pdf.beginText(40, 750)
+                    text.setFont("Helvetica", 11)
+                text.textLine(line.strip())
+            pdf.drawText(text)
+            pdf.save()
+            buffer.seek(0)
+            st.download_button("📥 Download Feedback as PDF", buffer, "debate_rebuttal_feedback.pdf", mime="application/pdf")
