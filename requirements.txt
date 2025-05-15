@@ -10,3 +10,4 @@ unstructured
 langchain-community
 sentence-transformers
 docarray
+docx2txt
