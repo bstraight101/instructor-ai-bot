@@ -1,5 +1,5 @@
 import os
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import DocArrayInMemorySearch
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from sentence_transformers import SentenceTransformer
@@ -8,17 +8,15 @@ from langchain.prompts import PromptTemplate
 from langchain.llms import Ollama
 
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-CHROMA_DIR = "vectorstore"
 
 def create_vectorstore(chunks):
     embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-    vectorstore = Chroma.from_documents(documents=chunks, embedding=embeddings, persist_directory=CHROMA_DIR)
+    vectorstore = DocArrayInMemorySearch.from_documents(documents=chunks, embedding=embeddings)
     return vectorstore
 
 def load_vectorstore():
-    embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-    vectorstore = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-    return vectorstore
+    # For DocArrayInMemorySearch, vectorstore is recreated during this session
+    return None
 
 def build_qa_chain(vectorstore):
     retriever = vectorstore.as_retriever()
