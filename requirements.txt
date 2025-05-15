@@ -12,3 +12,4 @@ sentence-transformers
 docarray
 docx2txt
 pdfminer.six
+pillow-heif
