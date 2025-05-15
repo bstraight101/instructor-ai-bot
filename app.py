@@ -40,7 +40,7 @@ def generate_review_questions_groq(content, num_questions=10):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "mixtral-8x7b-instruct",
+        "model": "llama3-70b-8192",
         "messages": [
             {"role": "system", "content": "You are a helpful instructor assistant."},
             {"role": "user", "content": prompt}
