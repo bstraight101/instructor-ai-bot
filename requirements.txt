@@ -1,0 +1,10 @@
+streamlit
+pandas
+python-docx
+PyPDF2
+python-pptx
+reportlab
+requests
+langchain
+unstructured
+langchain-community
