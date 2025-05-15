@@ -61,12 +61,14 @@ blocked_questions = load_blocked_questions()
 st.set_page_config(page_title="Instructor AI Assistant", layout="centered")
 st.title("📘 Instructor AI Assistant")
 
+# === RESET BUTTON ===
 if st.button("🔁 Reset All"):
     shutil.rmtree(UPLOAD_DIR, ignore_errors=True)
     shutil.rmtree(VECTOR_PATH, ignore_errors=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     st.experimental_rerun()
 
+# === FILE UPLOAD DROPDOWN (CLEAN VIEW) ===
 if os.listdir(UPLOAD_DIR):
     st.subheader("📁 Uploaded Files")
     selected_file = st.selectbox(
@@ -75,19 +77,19 @@ if os.listdir(UPLOAD_DIR):
         key="uploaded_file_dropdown"
     )
 
+# === CREATE VECTORSTORE + QA CHAIN (DocArray is recreated every time) ===
 vectorstore, qa = None, None
-if os.path.exists(os.path.join(VECTOR_PATH, "index.faiss")):
-    with st.spinner("🔁 Loading saved memory..."):
-        vectorstore = load_vectorstore()
-        qa = build_qa_chain(vectorstore)
-elif os.listdir(UPLOAD_DIR):
-    with st.spinner("📚 Processing files..."):
+if os.listdir(UPLOAD_DIR):
+    with st.spinner("📚 Processing uploaded files..."):
         docs = load_documents(UPLOAD_DIR)
         chunks = split_documents(docs)
         vectorstore = create_vectorstore(chunks)
         qa = build_qa_chain(vectorstore)
         st.success("✅ Assistant Ready")
+else:
+    st.info("📂 Upload course files to begin.")
 
+# === ASK A QUESTION ===
 if qa:
     query = st.text_input("What do you want to know?")
     if query:
