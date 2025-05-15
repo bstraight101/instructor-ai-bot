@@ -39,21 +39,16 @@ def load_blocked_questions(csv_path=BLOCKED_QA_FILE):
                     blocklist.add(row[0].strip().lower())
     return blocklist
 
-def find_best_match(user_input, qna_dict, threshold=0.85):
-    user_input = user_input.strip().lower()
-    best_match = difflib.get_close_matches(user_input, qna_dict.keys(), n=1, cutoff=threshold)
-    return qna_dict[best_match[0]] if best_match else None
-
-def is_blocked_question(user_input, blocked_set, threshold=0.85):
-    user_input = user_input.strip().lower()
-    return bool(difflib.get_close_matches(user_input, blocked_set, n=1, cutoff=threshold))
-
 def extract_slide_text(pptx_path):
     prs = Presentation(pptx_path)
-    return [
-        " ".join(para.text.strip() for para in shape.text_frame.paragraphs if para.text.strip())
-        for slide in prs.slides for shape in slide.shapes if shape.has_text_frame
-    ]
+    all_text = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    if para.text.strip():
+                        all_text.append(para.text.strip())
+    return all_text
 
 def generate_with_groq(prompt):
     api_key = st.secrets["GROQ_API_KEY"]
@@ -69,14 +64,18 @@ def generate_with_groq(prompt):
         return f"❌ Failed to generate. Status code: {res.status_code}"
 
 def generate_review_questions(slide_texts, num_questions=10):
+    joined = " ".join(slide_texts)
+    if len(joined) > 2000:
+        joined = joined[:2000]
     prompt = (
-        f"Generate {num_questions} open-ended review questions for students based on this PowerPoint content.\n\n"
-        + "\n".join(slide_texts[:15]) +
-        "\n\nOnly list the questions. No answers."
+        f"Generate {num_questions} open-ended review questions for students based on the following content.\n\n"
+        f"{joined}\n\nOnly list the questions. No answers."
     )
     return generate_with_groq(prompt)
 
 def generate_rebuttal_analysis(text):
+    if len(text) > 2000:
+        text = text[:2000]
     prompt = (
         "You are a debate coach. Identify 3–5 specific claims from this student-written argument that are vulnerable to rebuttal.\n"
         "- Quote the sentence.\n"
@@ -87,6 +86,7 @@ def generate_rebuttal_analysis(text):
     )
     return generate_with_groq(prompt)
 
+# === Streamlit UI ===
 st.set_page_config(page_title="Instructor AI Assistant", layout="centered")
 st.title("📘 Instructor AI Assistant")
 
@@ -115,7 +115,7 @@ if qa:
     query = st.text_input("What do you want to know?")
     if query:
         with st.spinner("🤖 Thinking..."):
-            if is_blocked_question(query, blocked_questions):
+            if any(find_best_match(query, {b: ""}) for b in blocked_questions):
                 st.warning("❌ I'm not allowed to answer quiz/exam questions.")
             else:
                 answer = find_best_match(query, custom_qna)
@@ -136,7 +136,7 @@ if pptx_files:
                 if line.strip():
                     st.write(f"- {line.strip()}")
 
-# === Quiz Preview Mode ===
+# === Quiz Preview ===
 st.markdown("---")
 st.header("📝 Quiz Preview Mode")
 quiz_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith("_review.csv")]
@@ -149,7 +149,7 @@ if quiz_files:
         required_cols = ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Option Index']
         if all(col in df.columns for col in required_cols):
             show_answers = st.checkbox("✅ Show Correct Answers")
-            clean_df = df.dropna(subset=['Question', 'Option A', 'Option B', 'Option C', 'Option D'])
+            clean_df = df.dropna(subset=required_cols)
             for i, row in clean_df.iterrows():
                 st.markdown(f"**Q{i+1}: {row['Question']}**")
                 st.write(f"A) {row['Option A']}")
@@ -169,7 +169,6 @@ if quiz_files:
 # === Debate Rebuttal Analyzer ===
 st.markdown("---")
 st.header("⚔️ Debate Rebuttal Analyzer")
-
 debate_file = st.file_uploader("Upload a debate argument (PDF or DOCX)", type=["pdf", "docx"], key="debate_upload")
 if debate_file:
     file_path = os.path.join(UPLOAD_DIR, debate_file.name)
@@ -198,7 +197,7 @@ if debate_file:
             full_output = feedback + disclaimer
             st.markdown(full_output)
 
-            # PDF output
+            # PDF download
             buffer = BytesIO()
             pdf = canvas.Canvas(buffer, pagesize=letter)
             text = pdf.beginText(40, 750)
