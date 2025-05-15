@@ -5,6 +5,7 @@ import csv
 import difflib
 import requests
 import pandas as pd
+import json
 from pptx import Presentation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -50,41 +51,34 @@ def extract_slide_text(pptx_path):
                         all_text.append(para.text.strip())
     return all_text
 
-
 def generate_with_groq(prompt):
-    import os
-    import json
     api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
     if not api_key:
-        return "❌ Missing GROQ_API_KEY in secrets."
+        return "❌ Missing GROQ_API_KEY."
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    payload = {
+    data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are a helpful teaching assistant."},
+            {"role": "system", "content": "You are a helpful instructor assistant."},
             {"role": "user", "content": prompt}
         ]
     }
-
     try:
-        res = requests.post(
+        response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers=headers,
-            data=json.dumps(payload)
+            data=json.dumps(data)
         )
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"]
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
         else:
-            return f"❌ Failed to generate. Status code: {res.status_code}
-Message: {res.text}"
+            return f"❌ Failed to generate. Code: {response.status_code}\n{response.text}"
     except Exception as e:
-        return f"❌ Request failed: {str(e)}"
-    else:
-        return f"❌ Failed to generate. Status code: {res.status_code}"
+        return f"❌ Exception: {str(e)}"
 
 def generate_review_questions(slide_texts, num_questions=10):
     joined = " ".join(slide_texts)
@@ -138,7 +132,7 @@ if qa:
     query = st.text_input("What do you want to know?")
     if query:
         with st.spinner("🤖 Thinking..."):
-            if any(find_best_match(query, {b: ""}) for b in blocked_questions):
+            if any(difflib.get_close_matches(query.strip().lower(), blocked_questions, n=1, cutoff=0.85)):
                 st.warning("❌ I'm not allowed to answer quiz/exam questions.")
             else:
                 answer = find_best_match(query, custom_qna)
